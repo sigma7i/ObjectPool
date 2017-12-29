@@ -134,6 +134,34 @@ namespace ObjectPool.Tests
 		}
 
 		[TestMethod]
+		public void PoolFlushTimout()
+		{
+			var pool = new ThirdPartyPool(0, 2);
+			pool.FlushTimeOut = 1;
+
+			var insance1 = pool.TakeInstance();
+			var insance2 = pool.TakeInstance();
+
+			// вернули только один
+			pool.Release(insance1);
+			ThrowsAssert.Throws<TimeoutException>(() => pool.TryFlush());
+
+			var pool2 = new ThirdPartyPool(0, 2);
+			pool.FlushTimeOut = 1;
+
+			var insance = pool.TakeInstance();
+			pool.Release(insance1);
+
+			Action<ThirdParty> longTimeDestroy = obj =>
+			{
+				Thread.Sleep(35000);
+			};
+
+			// слишком длительная очистка объекта
+			ThrowsAssert.Throws<TimeoutException>(() => pool.TryFlush(longTimeDestroy));
+		}
+
+		[TestMethod]
 		public void PoolOneThreadScenario()
 		{
 			const int iterations = 100;

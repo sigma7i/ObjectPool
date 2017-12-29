@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace ObjectPool
 {
@@ -41,6 +42,11 @@ namespace ObjectPool
 		}
 
 		#region Public members
+
+		/// <summary>
+		/// Тайм-аут очистки объектов из пула в секундах(по умолчанию 30)
+		/// </summary>
+		public int FlushTimeOut = 30;
 
 		/// <summary>
 		/// Получает текущее количество доступных объектов в пуле.
@@ -107,8 +113,33 @@ namespace ObjectPool
 		/// <summary>
 		///  Очищает пул от всех созданных экземпляров, применяя к каждому алгоритм уничтожения
 		/// </summary>
-		/// <remarks>Мягкая очистка. Объекты которые не вернулись в пул, будет ожидать Release</remarks>
+		/// <exception cref="TimeoutException">Возникает если объект не вернулся в пул, либо если слишком долгое уничтожение</exception>
+		/// <remarks>Объекты которые не вернулись в пул, будет ожидать Release до истечения TimeOut</remarks>
 		public void TryFlush(Action<T> destroyer)
+		{
+			Task flushingTask = Task.Factory.StartNew(() => Flushing(destroyer));
+			var timeoutMilliseconds = FlushTimeOut * 1000;
+
+			var isCompleted = flushingTask.Wait(timeoutMilliseconds);
+
+			if (!isCompleted)
+				throw new TimeoutException($"Время очищения пула объектов {typeof(T).Name} истекло(default {FlushTimeOut} seconds)");
+		}
+
+		/// <summary>
+		///  Очищает пул от всех созданных экземпляров, применяя к каждому экземпляру Dispose(если поддерживает)
+		/// </summary>
+		/// <exception cref="TimeoutException">TimeoutException</exception>
+		/// <remarks>Объекты которые не вернулись в пул, будет ожидать Release до истечения TimeOut</remarks>
+		public void TryFlush()
+		{
+			TryFlush(Destroyer);
+		}
+
+		/// <summary>
+		///  Очищает пул от всех созданных экземпляров, применяя к каждому алгоритм уничтожения
+		/// </summary>
+		private void Flushing(Action<T> destroyer)
 		{
 			while (TotalCount > 0)
 			{
@@ -120,15 +151,6 @@ namespace ObjectPool
 
 				_allocSemaphore.Release();
 			}
-		}
-
-		/// <summary>
-		///  Очищает пул от всех созданных экземпляров, применяя к каждому экземпляру Dispose, если он поддерживает
-		/// </summary>
-		/// <remarks>Мягкая очистка. Объекты которые не вернулись в пул, будет ожидать Release</remarks>
-		public void TryFlush()
-		{
-			TryFlush(Destroyer);
 		}
 
 		/// <summary>
